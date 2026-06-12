@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { BetRecord, Transaction } from "@/lib/storage";
 import {
   TrendingUp, TrendingDown, DollarSign, Target, Trophy,
-  ChevronDown, ChevronUp, PlusCircle, Check, X,
+  ChevronDown, ChevronUp, PlusCircle, Check, X, Download, Upload,
 } from "lucide-react";
 
 interface Props {
@@ -13,6 +13,7 @@ interface Props {
   bets: BetRecord[];
   transactions: Transaction[];
   onAdjust: (delta: number, description: string) => void;
+  onImport: () => void;
 }
 
 function relativeTime(iso: string) {
@@ -38,13 +39,56 @@ const TX_LABELS: Record<string, string> = {
   win: "Ganhou", loss: "Perdeu", void: "Void", adjustment: "Ajuste", cashout: "Cashout",
 };
 
+const STORAGE_KEYS = {
+  bankroll: "wc2026_bankroll",
+  bets: "wc2026_bets",
+  transactions: "wc2026_transactions",
+};
+
 export default function BankrollTracker({
-  bankroll, initialBankroll, bets, transactions, onAdjust,
+  bankroll, initialBankroll, bets, transactions, onAdjust, onImport,
 }: Props) {
   const [showHistory, setShowHistory] = useState(false);
   const [showAdjustForm, setShowAdjustForm] = useState(false);
   const [adjustValue, setAdjustValue] = useState("");
   const [adjustDesc, setAdjustDesc] = useState("");
+  const importRef = useRef<HTMLInputElement>(null);
+
+  function exportData() {
+    const data = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      bankroll: localStorage.getItem(STORAGE_KEYS.bankroll),
+      bets: localStorage.getItem(STORAGE_KEYS.bets),
+      transactions: localStorage.getItem(STORAGE_KEYS.transactions),
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `copa-bets-${new Date().toISOString().split("T")[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target?.result as string);
+        if (data.bankroll)      localStorage.setItem(STORAGE_KEYS.bankroll,     data.bankroll);
+        if (data.bets)          localStorage.setItem(STORAGE_KEYS.bets,         data.bets);
+        if (data.transactions)  localStorage.setItem(STORAGE_KEYS.transactions, data.transactions);
+        onImport();
+      } catch {
+        alert("Arquivo inválido — importe um .json exportado pelo Copa Bets.");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  }
 
   const settled = bets.filter((b) => b.result && b.result !== "void");
   const wins    = settled.filter((b) => b.result === "win");
@@ -85,6 +129,19 @@ export default function BankrollTracker({
             ? <TrendingUp size={18} className="text-green-400" />
             : <TrendingDown size={18} className="text-red-400" />
           }
+          <button
+            onClick={exportData}
+            className="flex items-center gap-1 text-xs text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 px-2.5 py-1.5 rounded-lg transition-colors"
+            title="Exportar dados">
+            <Download size={12} />
+          </button>
+          <button
+            onClick={() => importRef.current?.click()}
+            className="flex items-center gap-1 text-xs text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 px-2.5 py-1.5 rounded-lg transition-colors"
+            title="Importar dados">
+            <Upload size={12} />
+          </button>
+          <input ref={importRef} type="file" accept=".json" className="hidden" onChange={handleImportFile} />
           <button
             onClick={() => { setShowAdjustForm((v) => !v); setShowHistory(false); }}
             className="flex items-center gap-1 text-xs text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 px-2.5 py-1.5 rounded-lg transition-colors"

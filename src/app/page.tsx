@@ -166,6 +166,7 @@ export default function Home() {
               bets={bets}
               transactions={transactions}
               onAdjust={(delta, desc) => { adjustBankroll(delta, desc); refresh(); }}
+              onImport={refresh}
             />
 
             {/* Filters */}
