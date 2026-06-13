@@ -246,7 +246,7 @@ export function analyzeMatch(
     .filter((r) => {
       if (!r.kelly.hasValue) return false;
       if (r.edge < minEdgeFor(r.fairImpliedProb)) return false;
-      if (r.fairImpliedProb < 0.20) return false;
+      if (r.fairImpliedProb < 0.10) return false; // odds > 10.00 = azarão extremo
       if (dataQuality === "poor" && r.fairImpliedProb < 0.30) return false;
       return true;
     })
@@ -363,7 +363,7 @@ export function analyzeMatch(
     .filter((r) => {
       if (!r.kelly.hasValue) return false;
       if (r.edge < minEdgeFor(r.fairImpliedProb)) return false;
-      if (r.fairImpliedProb < 0.20) return false;
+      if (r.fairImpliedProb < 0.10) return false; // odds > 10.00 = azarão extremo
       return true;
     })
     .sort((a, b) => b.kelly.fraction - a.kelly.fraction);
