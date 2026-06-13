@@ -94,11 +94,18 @@ export default function BankrollTracker({
   const wins    = settled.filter((b) => b.result === "win");
   const pending = bets.filter((b) => !b.result);
 
-  const totalProfit = settled.reduce((sum, b) => sum + (b.profit ?? 0), 0);
+  // Lucro real: para wins/cashouts usa b.profit; para losses usa -amount (garante consistência mesmo em registros antigos)
+  const totalProfit = settled.reduce((sum, b) => {
+    if (b.result === "loss") return sum - b.amount;
+    return sum + (b.profit ?? 0);
+  }, 0);
   const totalStaked = settled.reduce((sum, b) => sum + b.amount, 0);
   const roi = totalStaked > 0 ? (totalProfit / totalStaked) * 100 : 0;
-  const profitPct = ((bankroll - initialBankroll) / initialBankroll) * 100;
-  const isPositive = bankroll >= initialBankroll;
+
+  // O saldo atual já tem as apostas pendentes debitadas — devolve pro cálculo de % para não contar como perda
+  const pendingStaked = pending.reduce((s, b) => s + b.amount, 0);
+  const profitPct = ((bankroll + pendingStaked - initialBankroll) / initialBankroll) * 100;
+  const isPositive = bankroll + pendingStaked >= initialBankroll;
 
   function handleAdjust() {
     const delta = parseFloat(adjustValue.replace(",", "."));

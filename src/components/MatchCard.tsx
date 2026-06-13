@@ -1033,6 +1033,99 @@ export default function MatchCard({ fixture, bankroll, onBankrollChange }: Props
             </div>
           )}
 
+          {/* ── Aposta no Brasil ── */}
+          {(() => {
+            const brazilIsHome = fixture.homeTeam === "Brazil";
+            const brazilIsAway = fixture.awayTeam === "Brazil";
+            if (!brazilIsHome && !brazilIsAway) return null;
+            if (!odds || isPast) return null;
+
+            const brazilOdds   = brazilIsHome ? odds.home : odds.away;
+            const brazilLabel  = brazilIsHome ? `${fixture.homeTeam} vence` : `${fixture.awayTeam} vence`;
+            const alreadyBet   = bets.some((b) => b.label === brazilLabel);
+            if (alreadyBet) return null;
+
+            const formKey = "BRASIL_WIN";
+            const form = betForms[formKey] ?? {
+              amount: Math.max(1, bankroll * 0.05).toFixed(2),
+              odds: brazilOdds.toFixed(2),
+            };
+            const customAmount = parseFloat(form.amount.replace(",", ".")) || 0;
+            const customOdds   = parseFloat(form.odds.replace(",", "."))   || 0;
+            const netGain  = customOdds > 1 ? (customOdds - 1) * customAmount : 0;
+            const totalBack = customOdds > 1 ? customOdds * customAmount : 0;
+
+            return (
+              <div className="border border-yellow-700/50 rounded-xl p-3 space-y-3 bg-yellow-950/20">
+                <p className="text-[10px] font-bold text-yellow-400 uppercase tracking-widest">
+                  🇧🇷 Apostar no Brasil
+                </p>
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-bold text-white">{brazilLabel}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      Odd <span className="text-white font-mono font-bold">{brazilOdds.toFixed(2)}</span>
+                      {probs && (
+                        <span className="ml-2 text-gray-500">
+                          · modelo: {((brazilIsHome ? probs.homeWin : probs.awayWin) * 100).toFixed(1)}%
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-black/30 border border-white/10 rounded-lg px-3 py-2.5 space-y-2">
+                  <div className="flex gap-3">
+                    <div className="flex-1">
+                      <label className="text-[10px] text-gray-600 block mb-0.5">Valor (R$)</label>
+                      <input
+                        type="number" step="0.01" min="0.01"
+                        value={form.amount}
+                        onChange={(e) => setBetForms((p) => ({ ...p, [formKey]: { ...form, amount: e.target.value } }))}
+                        className="w-full bg-gray-800 border border-white/10 rounded px-2 py-1.5 text-sm font-mono text-yellow-400 font-bold focus:outline-none focus:border-yellow-500"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="text-[10px] text-gray-600 block mb-0.5">Odd</label>
+                      <input
+                        type="number" step="0.01" min="1.01"
+                        value={form.odds}
+                        onChange={(e) => setBetForms((p) => ({ ...p, [formKey]: { ...form, odds: e.target.value } }))}
+                        className="w-full bg-gray-800 border border-white/10 rounded px-2 py-1.5 text-sm font-mono text-white font-bold focus:outline-none focus:border-yellow-500"
+                      />
+                    </div>
+                  </div>
+                  {customAmount > 0 && customOdds > 1 && (
+                    <div className="flex gap-4 text-xs pt-0.5">
+                      <span className="text-gray-500">Ganho líq. <span className="text-green-400 font-mono font-bold">+R$ {netGain.toFixed(2)}</span></span>
+                      <span className="text-gray-500">Retorno <span className="text-white font-mono font-bold">R$ {totalBack.toFixed(2)}</span></span>
+                    </div>
+                  )}
+                </div>
+
+                {customAmount > bankroll && (
+                  <p className="text-xs text-red-400">Valor maior que o bankroll (R$ {bankroll.toFixed(2)})</p>
+                )}
+                <button
+                  onClick={() => {
+                    if (customAmount <= 0 || customOdds <= 1 || customAmount > bankroll) return;
+                    placeBet(
+                      { market: "1X2", label: brazilLabel, edge: 0, odds: brazilOdds,
+                        ourProb: 0, impliedProb: 1/brazilOdds, fairImpliedProb: 1/brazilOdds,
+                        overround: 1, kelly: { hasValue: false, fraction: 0, halfFraction: 0, betAmount: 0, halfBetAmount: 0 },
+                        dataQuality: "good", divergenceRatio: 1, warnings: [] },
+                      customAmount,
+                      customOdds
+                    );
+                  }}
+                  disabled={customAmount <= 0 || customOdds <= 1 || customAmount > bankroll}
+                  className="w-full text-sm px-3 py-2 rounded-lg font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-yellow-700 hover:bg-yellow-600 text-white">
+                  🇧🇷 Registrar aposta no Brasil · R$ {customAmount > 0 ? customAmount.toFixed(2) : "0.00"} @ {customOdds > 1 ? customOdds.toFixed(2) : brazilOdds.toFixed(2)}
+                </button>
+              </div>
+            );
+          })()}
+
           {/* ── Apostas registradas ── */}
           {bets.length > 0 && (
             <div>
