@@ -1112,7 +1112,7 @@ export default function MatchCard({ fixture, bankroll, onBankrollChange }: Props
                     placeBet(
                       { market: "1X2", label: brazilLabel, edge: 0, odds: brazilOdds,
                         ourProb: 0, impliedProb: 1/brazilOdds, fairImpliedProb: 1/brazilOdds,
-                        overround: 1, kelly: { hasValue: false, fraction: 0, halfFraction: 0, betAmount: 0, halfBetAmount: 0 },
+                        overround: 1, kelly: { hasValue: false, fraction: 0, halfFraction: 0, betAmount: 0, halfBetAmount: 0, edge: 0 },
                         dataQuality: "good", divergenceRatio: 1, warnings: [] },
                       customAmount,
                       customOdds
