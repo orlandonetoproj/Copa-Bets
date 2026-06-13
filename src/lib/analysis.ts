@@ -230,8 +230,6 @@ export function analyzeMatch(
         warnings.push(`Modelo diverge ${divergenceRatio.toFixed(1)}× do mercado — mercado provavelmente sabe mais`);
       else if (divergenceRatio > 1.8)
         warnings.push(`Divergência moderada (${divergenceRatio.toFixed(1)}×) — aposta reduzida automaticamente`);
-      if (fairImpliedProb < 0.20)
-        warnings.push(`Azarão extremo (odds ${c.odds.toFixed(2)}) — risco muito elevado`);
 
       return {
         ...c,
@@ -248,6 +246,7 @@ export function analyzeMatch(
     .filter((r) => {
       if (!r.kelly.hasValue) return false;
       if (r.edge < minEdgeFor(r.fairImpliedProb)) return false;
+      if (r.fairImpliedProb < 0.20) return false;
       if (dataQuality === "poor" && r.fairImpliedProb < 0.30) return false;
       return true;
     })
@@ -364,6 +363,7 @@ export function analyzeMatch(
     .filter((r) => {
       if (!r.kelly.hasValue) return false;
       if (r.edge < minEdgeFor(r.fairImpliedProb)) return false;
+      if (r.fairImpliedProb < 0.20) return false;
       return true;
     })
     .sort((a, b) => b.kelly.fraction - a.kelly.fraction);
