@@ -8,6 +8,7 @@ import {
   setBankroll, addTransaction, uid,
 } from "@/lib/storage";
 import { analyzeMatch, BetRecommendation } from "@/lib/analysis";
+import { TEAMS } from "@/data/teams";
 import { MatchProbabilities } from "@/lib/poisson";
 import {
   fetchTeamStrength, fetchInjuries, fetchH2H,
@@ -509,7 +510,12 @@ export default function MatchCard({ fixture, bankroll, onBankrollChange }: Props
         <div className="flex items-center justify-between mt-2">
           <div className="flex-1 text-center">
             <p className="font-bold text-white text-lg leading-tight">{fixture.homeTeam}</p>
-            {fixture.homeIsHost && <span className="text-xs text-yellow-500">Sede</span>}
+            <div className="flex items-center justify-center gap-1.5 mt-0.5">
+              {TEAMS[fixture.homeTeam]?.fifaRank && (
+                <span className="text-[10px] text-gray-500 font-mono">#{TEAMS[fixture.homeTeam].fifaRank} FIFA</span>
+              )}
+              {fixture.homeIsHost && <span className="text-[10px] text-yellow-500">Sede</span>}
+            </div>
           </div>
           <div className="px-4 text-center min-w-[130px]">
             {probs ? (
@@ -531,6 +537,9 @@ export default function MatchCard({ fixture, bankroll, onBankrollChange }: Props
           </div>
           <div className="flex-1 text-center">
             <p className="font-bold text-white text-lg leading-tight">{fixture.awayTeam}</p>
+            {TEAMS[fixture.awayTeam]?.fifaRank && (
+              <p className="text-[10px] text-gray-500 font-mono mt-0.5">#{TEAMS[fixture.awayTeam].fifaRank} FIFA</p>
+            )}
           </div>
         </div>
       </div>
@@ -894,9 +903,46 @@ export default function MatchCard({ fixture, bankroll, onBankrollChange }: Props
             </div>
           )}
 
-          {analysis && analysis.recommendations.length === 0 && analysis.comboRecommendations.length === 0 && odds && bets.length === 0 && (
-            <p className="text-xs text-gray-600">Sem valor estatístico detectado neste jogo.</p>
-          )}
+          {analysis && analysis.recommendations.length === 0 && analysis.comboRecommendations.length === 0 && odds && bets.length === 0 && probs && (() => {
+            const candidates = [
+              { label: `${fixture.homeTeam} vence`, modelProb: probs.homeWin, odds: odds.home },
+              { label: "Empate",                     modelProb: probs.draw,    odds: odds.draw },
+              { label: `${fixture.awayTeam} vence`,  modelProb: probs.awayWin, odds: odds.away },
+              ...(odds.over25  ? [{ label: "Over 2.5 gols",  modelProb: probs.over25,  odds: odds.over25  }] : []),
+              ...(odds.under25 ? [{ label: "Under 2.5 gols", modelProb: probs.under25, odds: odds.under25 }] : []),
+            ];
+            return (
+              <div className="rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2.5 space-y-1.5">
+                <p className="text-[10px] text-gray-600 uppercase tracking-wider font-semibold">Por que não há recomendações</p>
+                {candidates.map((c) => {
+                  const impliedProb = 1 / c.odds;
+                  const or1x2 = 1/odds.home + 1/odds.draw + 1/odds.away;
+                  const fairProb  = impliedProb / (["Over 2.5 gols","Under 2.5 gols"].includes(c.label)
+                    ? (odds.over25 && odds.under25 ? 1/odds.over25 + 1/odds.under25 : or1x2)
+                    : or1x2);
+                  const edge = c.modelProb - fairProb;
+                  const isFiltered = impliedProb < 0.267; // odds > 3.75
+                  return (
+                    <div key={c.label} className="flex items-center justify-between text-[11px] gap-2">
+                      <span className="text-gray-500 truncate">{c.label}</span>
+                      <div className="flex items-center gap-2 shrink-0 font-mono">
+                        <span className="text-gray-600">{c.odds.toFixed(2)}</span>
+                        <span className="text-gray-600">mod {(c.modelProb * 100).toFixed(0)}%</span>
+                        <span className={edge >= 0.06 ? "text-green-600" : edge >= 0 ? "text-yellow-700" : "text-red-800"}>
+                          {edge >= 0 ? "+" : ""}{(edge * 100).toFixed(1)}%
+                        </span>
+                        {isFiltered
+                          ? <span className="text-gray-700">odd alta</span>
+                          : edge < 0.06
+                          ? <span className="text-gray-700">edge insuf.</span>
+                          : <span className="text-green-700">✓</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
 
           {/* ── Mercados Combinados ── */}
           {analysis && analysis.comboRecommendations.length > 0 && bets.length === 0 && (
