@@ -510,12 +510,7 @@ export default function MatchCard({ fixture, bankroll, onBankrollChange }: Props
         <div className="flex items-center justify-between mt-2">
           <div className="flex-1 text-center">
             <p className="font-bold text-white text-lg leading-tight">{fixture.homeTeam}</p>
-            <div className="flex items-center justify-center gap-1.5 mt-0.5">
-              {TEAMS[fixture.homeTeam]?.fifaRank && (
-                <span className="text-[10px] text-gray-500 font-mono">#{TEAMS[fixture.homeTeam].fifaRank} FIFA</span>
-              )}
-              {fixture.homeIsHost && <span className="text-[10px] text-yellow-500">Sede</span>}
-            </div>
+            {fixture.homeIsHost && <span className="text-[10px] text-yellow-500">Sede</span>}
           </div>
           <div className="px-4 text-center min-w-[130px]">
             {probs ? (
@@ -537,9 +532,6 @@ export default function MatchCard({ fixture, bankroll, onBankrollChange }: Props
           </div>
           <div className="flex-1 text-center">
             <p className="font-bold text-white text-lg leading-tight">{fixture.awayTeam}</p>
-            {TEAMS[fixture.awayTeam]?.fifaRank && (
-              <p className="text-[10px] text-gray-500 font-mono mt-0.5">#{TEAMS[fixture.awayTeam].fifaRank} FIFA</p>
-            )}
           </div>
         </div>
       </div>
@@ -903,43 +895,98 @@ export default function MatchCard({ fixture, bankroll, onBankrollChange }: Props
             </div>
           )}
 
-          {analysis && analysis.recommendations.length === 0 && analysis.comboRecommendations.length === 0 && odds && bets.length === 0 && probs && (() => {
+          {analysis && analysis.recommendations.length === 0 && analysis.comboRecommendations.length === 0 && odds && probs && bets.length === 0 && !isPast && (() => {
+            // Sem recomendação pelo modelo → mostra a melhor aposta disponível
+            const or1x2 = 1/odds.home + 1/odds.draw + 1/odds.away;
+            const ouOr  = odds.over25 && odds.under25 ? 1/odds.over25 + 1/odds.under25 : or1x2;
             const candidates = [
-              { label: `${fixture.homeTeam} vence`, modelProb: probs.homeWin, odds: odds.home },
-              { label: "Empate",                     modelProb: probs.draw,    odds: odds.draw },
-              { label: `${fixture.awayTeam} vence`,  modelProb: probs.awayWin, odds: odds.away },
-              ...(odds.over25  ? [{ label: "Over 2.5 gols",  modelProb: probs.over25,  odds: odds.over25  }] : []),
-              ...(odds.under25 ? [{ label: "Under 2.5 gols", modelProb: probs.under25, odds: odds.under25 }] : []),
-            ];
+              { label: `${fixture.homeTeam} vence`, market: "1X2", ourProb: probs.homeWin, odds: odds.home, fairProb: (1/odds.home)/or1x2 },
+              { label: "Empate",                    market: "1X2", ourProb: probs.draw,    odds: odds.draw, fairProb: (1/odds.draw)/or1x2  },
+              { label: `${fixture.awayTeam} vence`, market: "1X2", ourProb: probs.awayWin, odds: odds.away, fairProb: (1/odds.away)/or1x2  },
+              ...(odds.over25  ? [{ label: "Over 2.5 gols",  market: "O/U", ourProb: probs.over25,  odds: odds.over25,  fairProb: (1/odds.over25)/ouOr  }] : []),
+              ...(odds.under25 ? [{ label: "Under 2.5 gols", market: "O/U", ourProb: probs.under25, odds: odds.under25, fairProb: (1/odds.under25)/ouOr }] : []),
+            ].filter((c) => c.odds <= 5.0); // exclui odds completamente absurdas
+
+            if (candidates.length === 0) return null;
+
+            // Pega a que tem o maior edge (pode ser negativo — é a melhor disponível)
+            const best = candidates.reduce((a, b) =>
+              (b.ourProb - b.fairProb) > (a.ourProb - a.fairProb) ? b : a
+            );
+            const edge = best.ourProb - best.fairProb;
+
+            const formKey = `BEST_${fixture.id}`;
+            const form = betForms[formKey] ?? {
+              amount: Math.max(1, bankroll * 0.03).toFixed(2),
+              odds: best.odds.toFixed(2),
+            };
+            const customAmount = parseFloat(form.amount.replace(",", ".")) || 0;
+            const customOdds   = parseFloat(form.odds.replace(",", "."))   || 0;
+            const netGain   = customOdds > 1 ? (customOdds - 1) * customAmount : 0;
+
             return (
-              <div className="rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2.5 space-y-1.5">
-                <p className="text-[10px] text-gray-600 uppercase tracking-wider font-semibold">Por que não há recomendações</p>
-                {candidates.map((c) => {
-                  const impliedProb = 1 / c.odds;
-                  const or1x2 = 1/odds.home + 1/odds.draw + 1/odds.away;
-                  const fairProb  = impliedProb / (["Over 2.5 gols","Under 2.5 gols"].includes(c.label)
-                    ? (odds.over25 && odds.under25 ? 1/odds.over25 + 1/odds.under25 : or1x2)
-                    : or1x2);
-                  const edge = c.modelProb - fairProb;
-                  const isFiltered = impliedProb < 0.267; // odds > 3.75
-                  return (
-                    <div key={c.label} className="flex items-center justify-between text-[11px] gap-2">
-                      <span className="text-gray-500 truncate">{c.label}</span>
-                      <div className="flex items-center gap-2 shrink-0 font-mono">
-                        <span className="text-gray-600">{c.odds.toFixed(2)}</span>
-                        <span className="text-gray-600">mod {(c.modelProb * 100).toFixed(0)}%</span>
-                        <span className={edge >= 0.06 ? "text-green-600" : edge >= 0 ? "text-yellow-700" : "text-red-800"}>
-                          {edge >= 0 ? "+" : ""}{(edge * 100).toFixed(1)}%
-                        </span>
-                        {isFiltered
-                          ? <span className="text-gray-700">odd alta</span>
-                          : edge < 0.06
-                          ? <span className="text-gray-700">edge insuf.</span>
-                          : <span className="text-green-700">✓</span>}
-                      </div>
+              <div className="border border-white/10 rounded-xl p-3 space-y-2.5 bg-white/[0.02]">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Melhor disponível</p>
+                  <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${edge >= 0 ? "bg-yellow-900/40 text-yellow-600" : "bg-white/5 text-gray-600"}`}>
+                    {edge >= 0 ? "+" : ""}{(edge * 100).toFixed(1)}% edge
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-bold text-white">{best.label}</p>
+                    <p className="text-[10px] text-gray-600 mt-0.5 font-mono">
+                      modelo {(best.ourProb * 100).toFixed(1)}% · mercado justo {(best.fairProb * 100).toFixed(1)}%
+                    </p>
+                  </div>
+                  <span className="text-lg font-mono font-bold text-white">{best.odds.toFixed(2)}</span>
+                </div>
+
+                <div className="bg-black/30 border border-white/10 rounded-lg px-3 py-2 space-y-2">
+                  <div className="flex gap-3">
+                    <div className="flex-1">
+                      <label className="text-[10px] text-gray-600 block mb-0.5">Valor (R$)</label>
+                      <input type="number" step="0.01" min="0.01"
+                        value={form.amount}
+                        onChange={(e) => setBetForms((p) => ({ ...p, [formKey]: { ...form, amount: e.target.value } }))}
+                        className="w-full bg-gray-800 border border-white/10 rounded px-2 py-1.5 text-sm font-mono text-white font-bold focus:outline-none focus:border-white/30"
+                      />
                     </div>
-                  );
-                })}
+                    <div className="flex-1">
+                      <label className="text-[10px] text-gray-600 block mb-0.5">Odd real</label>
+                      <input type="number" step="0.01" min="1.01"
+                        value={form.odds}
+                        onChange={(e) => setBetForms((p) => ({ ...p, [formKey]: { ...form, odds: e.target.value } }))}
+                        className="w-full bg-gray-800 border border-white/10 rounded px-2 py-1.5 text-sm font-mono text-white font-bold focus:outline-none focus:border-white/30"
+                      />
+                    </div>
+                  </div>
+                  {customAmount > 0 && customOdds > 1 && (
+                    <p className="text-xs text-gray-600">
+                      Ganho líq. <span className="text-gray-400 font-mono font-bold">+R$ {netGain.toFixed(2)}</span>
+                    </p>
+                  )}
+                </div>
+
+                {customAmount > bankroll && (
+                  <p className="text-xs text-red-400">Valor maior que o bankroll (R$ {bankroll.toFixed(2)})</p>
+                )}
+                <button
+                  onClick={() => {
+                    if (customAmount <= 0 || customOdds <= 1 || customAmount > bankroll) return;
+                    placeBet(
+                      { market: best.market, label: best.label, edge, odds: best.odds,
+                        ourProb: best.ourProb, impliedProb: 1/best.odds, fairImpliedProb: best.fairProb,
+                        overround: or1x2, kelly: { hasValue: false, fraction: 0, halfFraction: 0, betAmount: 0, halfBetAmount: 0, edge },
+                        dataQuality: "good", divergenceRatio: best.ourProb / best.fairProb, warnings: ["Abaixo do threshold do modelo"] },
+                      customAmount, customOdds
+                    );
+                  }}
+                  disabled={customAmount <= 0 || customOdds <= 1 || customAmount > bankroll}
+                  className="w-full text-sm px-3 py-2 rounded-lg font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-gray-700 hover:bg-gray-600 text-white">
+                  Registrar · {best.label} · R$ {customAmount > 0 ? customAmount.toFixed(2) : "0.00"} @ {customOdds > 1 ? customOdds.toFixed(2) : best.odds.toFixed(2)}
+                </button>
               </div>
             );
           })()}
