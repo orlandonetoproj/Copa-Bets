@@ -72,7 +72,7 @@ function deVig2Way(o1: number, o2: number) {
 }
 
 // ─── Bayesian shrinkage ────────────────────────────────────────────────────────
-const PRIOR_WEIGHT = 20;
+const PRIOR_WEIGHT = 8;
 function shrink(value: number, matches: number): number {
   return (value * matches + PRIOR_WEIGHT * 1.0) / (matches + PRIOR_WEIGHT);
 }
@@ -88,10 +88,9 @@ function isApiSource(s: TeamStrength | null | undefined): boolean {
 
 // ─── Dynamic edge threshold ────────────────────────────────────────────────────
 function minEdgeFor(fairProb: number): number {
-  if (fairProb < 0.12) return 0.12;
-  if (fairProb < 0.20) return 0.08;
-  if (fairProb < 0.30) return 0.06;
-  return 0.04;
+  if (fairProb < 0.20) return 0.10;
+  if (fairProb < 0.30) return 0.08;
+  return 0.06;
 }
 
 export function analyzeMatch(
@@ -141,8 +140,11 @@ export function analyzeMatch(
   }
 
   const hostFactor = homeIsHost ? HOST_ADVANTAGE : 1.0;
-  const lambdaHome = BASE_GOALS * homeAttack * awayDefense * hostFactor * injuryFactorHome;
-  const lambdaAway = BASE_GOALS * awayAttack * homeDefense * injuryFactorAway;
+  // styleModifier: 0.90–1.10 baseado em média de cartões amarelos (só aplicado se dado disponível)
+  const homeStyle = (homeStrength as { styleModifier?: number })?.styleModifier ?? 1.0;
+  const awayStyle = (awayStrength as { styleModifier?: number })?.styleModifier ?? 1.0;
+  const lambdaHome = BASE_GOALS * homeAttack * awayDefense * hostFactor * injuryFactorHome * homeStyle;
+  const lambdaAway = BASE_GOALS * awayAttack * homeDefense * injuryFactorAway * awayStyle;
 
   const probs = computeMatchProbabilities(lambdaHome, lambdaAway);
 
@@ -245,8 +247,9 @@ export function analyzeMatch(
     })
     .filter((r) => {
       if (!r.kelly.hasValue) return false;
+      if (r.fairImpliedProb < 0.267) return false; // odds > 3.75 — incerteza do modelo supera o edge
       if (r.edge < minEdgeFor(r.fairImpliedProb)) return false;
-      if (r.fairImpliedProb < 0.10) return false; // odds > 10.00 = azarão extremo
+      if (r.divergenceRatio > 2.0) return false;   // mercado sharp discorda demais
       if (dataQuality === "poor" && r.fairImpliedProb < 0.30) return false;
       return true;
     })
@@ -362,8 +365,9 @@ export function analyzeMatch(
     })
     .filter((r) => {
       if (!r.kelly.hasValue) return false;
+      if (r.fairImpliedProb < 0.267) return false;
       if (r.edge < minEdgeFor(r.fairImpliedProb)) return false;
-      if (r.fairImpliedProb < 0.10) return false; // odds > 10.00 = azarão extremo
+      if (r.divergenceRatio > 2.0) return false;
       return true;
     })
     .sort((a, b) => b.kelly.fraction - a.kelly.fraction);

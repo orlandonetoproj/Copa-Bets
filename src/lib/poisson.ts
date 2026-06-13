@@ -41,7 +41,7 @@ export function computeMatchProbabilities(
   maxGoals = 10,
   rho = -0.13
 ): MatchProbabilities {
-  let homeWin = 0, draw = 0, awayWin = 0, over25 = 0;
+  let homeWin = 0, draw = 0, awayWin = 0, over25 = 0, bttsYes = 0;
   let drawBtts = 0, drawUnder25 = 0;
   let homeWinBtts = 0, awayWinBtts = 0;
   let homeWinOver25 = 0, awayWinOver25 = 0;
@@ -54,6 +54,8 @@ export function computeMatchProbabilities(
       else if (h === a) draw += p;
       else awayWin += p;
       if (h + a >= 3) over25 += p;
+      // BTTS via joint distribution corrigida pelo Dixon-Coles (mais preciso que marginal)
+      if (h > 0 && a > 0)        bttsYes       += p;
       // Combinados
       if (h === a && h > 0)      drawBtts      += p;
       if (h === a && h + a <= 2) drawUnder25   += p;
@@ -68,10 +70,11 @@ export function computeMatchProbabilities(
   // (Dixon-Coles correction slightly breaks normalization)
   const total1x2 = homeWin + draw + awayWin;
   if (total1x2 > 0) {
-    homeWin /= total1x2;
-    draw    /= total1x2;
-    awayWin /= total1x2;
-    over25  /= total1x2;
+    homeWin  /= total1x2;
+    draw     /= total1x2;
+    awayWin  /= total1x2;
+    over25   /= total1x2;
+    bttsYes  /= total1x2;
     drawBtts      /= total1x2;
     drawUnder25   /= total1x2;
     homeWinBtts   /= total1x2;
@@ -79,9 +82,6 @@ export function computeMatchProbabilities(
     homeWinOver25 /= total1x2;
     awayWinOver25 /= total1x2;
   }
-
-  const bttsYes =
-    (1 - poissonProb(lambdaHome, 0)) * (1 - poissonProb(lambdaAway, 0));
 
   return {
     homeWin, draw, awayWin, over25,

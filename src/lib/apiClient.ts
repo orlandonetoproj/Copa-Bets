@@ -168,6 +168,7 @@ export interface RealTeamStrength extends TeamStrength {
   avgScored?: number;
   avgConceded?: number;
   lastFiveResults?: Array<"W" | "D" | "L">;
+  styleModifier?: number; // 0.90–1.10: ajuste por estilo físico/ofensivo via cartões
   error?: string;
 }
 
@@ -213,6 +214,7 @@ async function fetchFromFlashscore(teamName: string): Promise<RealTeamStrength |
       avgScored: json.avgScored,
       avgConceded: json.avgConceded,
       lastFiveResults: json.lastFiveResults,
+      styleModifier: json.styleModifier ?? 1.0,
     };
   } catch { return null; }
 }

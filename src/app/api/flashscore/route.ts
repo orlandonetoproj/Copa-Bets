@@ -60,22 +60,43 @@ export async function GET(request: NextRequest) {
 
   // Use at most 20 most recent matches for relevance
   const recentMatches = allMatches.slice(0, 20);
+
+  // Exponential recency weighting: jogos recentes valem mais
+  // decay=0.07 → half-life ≈ 10 jogos (jogo mais recente pesa ~2× o de 10 rodadas atrás)
+  const weights = recentMatches.map((_, i) => Math.exp(-i * 0.07));
+  const totalWeight = weights.reduce((s, w) => s + w, 0);
+
   let totalScored = 0;
   let totalConceded = 0;
+  let totalYellowCards = 0;
+  let cardMatches = 0;
   const lastFiveResults: ("W" | "D" | "L")[] = [];
   const recentResults: { date: string; home: string; homeGoals: number; away: string; awayGoals: number }[] = [];
 
-  for (const r of recentMatches) {
+  for (let i = 0; i < recentMatches.length; i++) {
+    const r = recentMatches[i];
+    const w = weights[i];
+
     // PY = home team ID, PX = away team ID (confirmed from field analysis)
     const isHome = r.PY === teamId;
     const homeGoals = parseInt(r.AH ?? "0");
     const awayGoals = parseInt(r.AG ?? "0");
 
     const teamGoals = isHome ? homeGoals : awayGoals;
-    const oppGoals = isHome ? awayGoals : homeGoals;
+    const oppGoals  = isHome ? awayGoals : homeGoals;
 
-    totalScored += teamGoals;
-    totalConceded += oppGoals;
+    totalScored    += teamGoals * w;
+    totalConceded  += oppGoals  * w;
+
+    // Tenta extrair cartões amarelos do time (campos EL=home yellow, EM=away yellow)
+    // Se não existirem no feed, simplesmente não altera o style modifier
+    const homeYellow = r.EL !== undefined ? parseInt(r.EL) : NaN;
+    const awayYellow = r.EM !== undefined ? parseInt(r.EM) : NaN;
+    const teamYellow = isHome ? homeYellow : awayYellow;
+    if (!isNaN(teamYellow)) {
+      totalYellowCards += teamYellow;
+      cardMatches++;
+    }
 
     if (lastFiveResults.length < 5) {
       if (teamGoals > oppGoals) lastFiveResults.push("W");
@@ -93,12 +114,21 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const n = recentMatches.length;
-  const avgScored = parseFloat((totalScored / n).toFixed(3));
-  const avgConceded = parseFloat((totalConceded / n).toFixed(3));
-  const attack = parseFloat((avgScored / WC_AVG_GOALS).toFixed(3));
+  const avgScored    = parseFloat((totalScored   / totalWeight).toFixed(3));
+  const avgConceded  = parseFloat((totalConceded / totalWeight).toFixed(3));
+  const attack  = parseFloat((avgScored   / WC_AVG_GOALS).toFixed(3));
   const defense = parseFloat((avgConceded / WC_AVG_GOALS).toFixed(3));
 
+  // Índice de estilo: se o time tem dados de cartão suficientes, aplica modificador suave
+  // Clampeado entre 0.90 e 1.10 — nunca muda o xG em mais de 10%
+  let styleModifier = 1.0;
+  if (cardMatches >= 10) {
+    const avgYellow = totalYellowCards / cardMatches;
+    if (avgYellow > 3.5)      styleModifier = 0.93; // físico/defensivo
+    else if (avgYellow < 1.5) styleModifier = 1.05; // limpo/ofensivo
+  }
+
+  const n = recentMatches.length;
   return NextResponse.json({
     source: "flashscore",
     matches: n,
@@ -106,6 +136,7 @@ export async function GET(request: NextRequest) {
     avgConceded,
     attack,
     defense,
+    styleModifier,
     lastFiveResults,
     recentResults: recentResults.slice(0, 8),
   });
