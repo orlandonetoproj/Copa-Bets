@@ -55,7 +55,7 @@ export interface OddsApiEvent {
   }>;
 }
 
-const ODDS_CACHE_KEY = "wc2026_odds_events_v2";
+const ODDS_CACHE_KEY = "wc2026_odds_events_v3";
 const ODDS_CACHE_TTL = 30 * 60 * 1000; // 30 min
 
 interface OddsCache { events: OddsApiEvent[]; ts: number; remaining: string | null }
@@ -111,10 +111,27 @@ export function extractOddsFromEvents(
     const bttsYes = bttsMarket?.outcomes.find((o) => o.name === "Yes")?.price;
     const bttsNo  = bttsMarket?.outcomes.find((o) => o.name === "No")?.price;
 
+    // Corners: pick the over outcome closest to 9.5 (most common line in soccer)
+    let cornersOver: number | undefined;
+    let cornersUnder: number | undefined;
+    let cornersLine: number | undefined;
+    const cornersMkt = bm.markets.find((m) => m.key === "corners");
+    if (cornersMkt) {
+      const overOuts = cornersMkt.outcomes.filter((o) => o.name === "Over" && o.point !== undefined);
+      if (overOuts.length > 0) {
+        const best = overOuts.reduce((a, b) =>
+          Math.abs((a.point ?? 0) - 9.5) <= Math.abs((b.point ?? 0) - 9.5) ? a : b
+        );
+        cornersLine  = best.point;
+        cornersOver  = best.price;
+        cornersUnder = cornersMkt.outcomes.find((o) => o.name === "Under" && o.point === best.point)?.price;
+      }
+    }
+
     const overround = 1 / home + 1 / draw + 1 / away;
     allBookmakers.push({
       key: bm.key, home, draw, away, over25: over, under25: under,
-      bttsYes, bttsNo,
+      bttsYes, bttsNo, cornersOver, cornersUnder, cornersLine,
       overround, isSharp: SHARP_BOOKS.has(bm.key),
     });
   }
@@ -132,10 +149,22 @@ export function extractOddsFromEvents(
   const bestRetailHome  = Math.max(...allBookmakers.map((b) => b.home));
   const bestRetailAway  = Math.max(...allBookmakers.map((b) => b.away));
   const bestRetailDraw  = Math.max(...allBookmakers.map((b) => b.draw));
-  const bestRetailOver    = Math.max(...allBookmakers.map((b) => b.over25  ?? 0)) || undefined;
-  const bestRetailUnder   = Math.max(...allBookmakers.map((b) => b.under25 ?? 0)) || undefined;
-  const bestRetailBttsYes = Math.max(...allBookmakers.map((b) => b.bttsYes ?? 0)) || undefined;
-  const bestRetailBttsNo  = Math.max(...allBookmakers.map((b) => b.bttsNo  ?? 0)) || undefined;
+  const bestRetailOver    = Math.max(...allBookmakers.map((b) => b.over25    ?? 0)) || undefined;
+  const bestRetailUnder   = Math.max(...allBookmakers.map((b) => b.under25   ?? 0)) || undefined;
+  const bestRetailBttsYes = Math.max(...allBookmakers.map((b) => b.bttsYes   ?? 0)) || undefined;
+  const bestRetailBttsNo  = Math.max(...allBookmakers.map((b) => b.bttsNo    ?? 0)) || undefined;
+  const bestRetailCornersOver  = Math.max(...allBookmakers.map((b) => b.cornersOver  ?? 0)) || undefined;
+  const bestRetailCornersUnder = Math.max(...allBookmakers.map((b) => b.cornersUnder ?? 0)) || undefined;
+  // Use the line from the ref book; fall back to any available line
+  const cornersLineRef = ref.cornersLine ?? allBookmakers.find((b) => b.cornersLine)?.cornersLine;
+
+  // Double Chance odds derived from 1X2 de-vigged probabilities
+  const or1x2 = 1 / ref.home + 1 / ref.draw + 1 / ref.away;
+  const fairHome = (1 / ref.home) / or1x2;
+  const fairDraw = (1 / ref.draw) / or1x2;
+  const fairAway = (1 / ref.away) / or1x2;
+  const dcHome = parseFloat((1 / (fairHome + fairDraw)).toFixed(2));
+  const dcAway = parseFloat((1 / (fairAway + fairDraw)).toFixed(2));
 
   return {
     fixtureId,
@@ -143,15 +172,19 @@ export function extractOddsFromEvents(
     home: ref.home,
     draw: ref.draw,
     away: ref.away,
-    over25:   ref.over25   ?? bestRetailOver,
-    under25:  ref.under25  ?? bestRetailUnder,
-    bttsYes:  ref.bttsYes  ?? bestRetailBttsYes,
-    bttsNo:   ref.bttsNo   ?? bestRetailBttsNo,
+    over25:       ref.over25      ?? bestRetailOver,
+    under25:      ref.under25     ?? bestRetailUnder,
+    bttsYes:      ref.bttsYes     ?? bestRetailBttsYes,
+    bttsNo:       ref.bttsNo      ?? bestRetailBttsNo,
+    cornersOver:  ref.cornersOver  ?? bestRetailCornersOver,
+    cornersUnder: ref.cornersUnder ?? bestRetailCornersUnder,
+    cornersLine:  cornersLineRef,
+    dcHome,
+    dcAway,
     bookmaker: ref.key,
     // Retail-best odds are stored separately in allBookmakers for the UI
     allBookmakers: allBookmakers.map((b) => ({
       ...b,
-      // Mark the best available retail odds for each outcome
       home:  b.home  === bestRetailHome  ? b.home  : b.home,
       away:  b.away  === bestRetailAway  ? b.away  : b.away,
       draw:  b.draw  === bestRetailDraw  ? b.draw  : b.draw,

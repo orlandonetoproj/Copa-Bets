@@ -365,6 +365,7 @@ export default function MatchCard({ fixture, bankroll, onBankrollChange }: Props
   const [injuryFactorAway, setInjuryFactorAway] = useState(1);
   const [strengthState, setStrengthState] = useState<"idle" | "loading" | "done">("idle");
   const [loadingInjuries, setLoadingInjuries] = useState(false);
+  const [brazilMarketKey, setBrazilMarketKey] = useState<string>("");
   const loadingRef = useRef(false);
 
   useEffect(() => {
@@ -1033,26 +1034,49 @@ export default function MatchCard({ fixture, bankroll, onBankrollChange }: Props
             </div>
           )}
 
-          {/* ── Aposta no Brasil ── */}
+          {/* ── Apostar no Brasil ── */}
           {(() => {
             const brazilIsHome = fixture.homeTeam === "Brazil";
             const brazilIsAway = fixture.awayTeam === "Brazil";
             if (!brazilIsHome && !brazilIsAway) return null;
             if (!odds || isPast) return null;
 
-            const brazilOdds   = brazilIsHome ? odds.home : odds.away;
-            const brazilLabel  = brazilIsHome ? `${fixture.homeTeam} vence` : `${fixture.awayTeam} vence`;
-            const alreadyBet   = bets.some((b) => b.label === brazilLabel);
-            if (alreadyBet) return null;
+            const brazilName = brazilIsHome ? fixture.homeTeam : fixture.awayTeam;
 
-            const formKey = "BRASIL_WIN";
-            const form = betForms[formKey] ?? {
+            // Monta lista de mercados disponíveis a favor do Brasil
+            type BrMarket = { key: string; label: string; market: string; odds: number };
+            const brMarkets: BrMarket[] = [
+              { key: "BR_WIN",  label: `${brazilName} vence (1X2)`,        market: "1X2",   odds: brazilIsHome ? odds.home : odds.away },
+              { key: "BR_DC",   label: `${brazilName} ou Empate (DC)`,     market: "DC",    odds: brazilIsHome ? (odds.dcHome ?? 0) : (odds.dcAway ?? 0) },
+            ];
+            if (odds.over25)        brMarkets.push({ key: "BR_OVER25",   label: "Over 2.5 gols",                    market: "Over/Under",  odds: odds.over25 });
+            if (odds.under25)       brMarkets.push({ key: "BR_UNDER25",  label: "Under 2.5 gols",                   market: "Over/Under",  odds: odds.under25 });
+            if (odds.bttsYes)       brMarkets.push({ key: "BR_BTTS_S",   label: "Ambos marcam – Sim",               market: "BTTS",        odds: odds.bttsYes });
+            if (odds.bttsNo)        brMarkets.push({ key: "BR_BTTS_N",   label: "Ambos marcam – Não",               market: "BTTS",        odds: odds.bttsNo });
+            if (odds.cornersOver && odds.cornersLine)
+                                    brMarkets.push({ key: "BR_CRNR_O",   label: `Over ${odds.cornersLine} escanteios`,  market: "Corners", odds: odds.cornersOver });
+            if (odds.cornersUnder && odds.cornersLine)
+                                    brMarkets.push({ key: "BR_CRNR_U",   label: `Under ${odds.cornersLine} escanteios`, market: "Corners", odds: odds.cornersUnder! });
+
+            // Filtra mercados já apostados e odds inválidas
+            const available = brMarkets.filter(
+              (m) => m.odds > 1 && !bets.some((b) => b.label === m.label)
+            );
+            if (available.length === 0) return null;
+
+            // Seleciona o mercado ativo (default = primeiro disponível)
+            const activeKey = brazilMarketKey && available.some((m) => m.key === brazilMarketKey)
+              ? brazilMarketKey
+              : available[0].key;
+            const activeMkt = available.find((m) => m.key === activeKey)!;
+
+            const form = betForms[activeKey] ?? {
               amount: Math.max(1, bankroll * 0.05).toFixed(2),
-              odds: brazilOdds.toFixed(2),
+              odds: activeMkt.odds.toFixed(2),
             };
             const customAmount = parseFloat(form.amount.replace(",", ".")) || 0;
             const customOdds   = parseFloat(form.odds.replace(",", "."))   || 0;
-            const netGain  = customOdds > 1 ? (customOdds - 1) * customAmount : 0;
+            const netGain   = customOdds > 1 ? (customOdds - 1) * customAmount : 0;
             const totalBack = customOdds > 1 ? customOdds * customAmount : 0;
 
             return (
@@ -1060,20 +1084,36 @@ export default function MatchCard({ fixture, bankroll, onBankrollChange }: Props
                 <p className="text-[10px] font-bold text-yellow-400 uppercase tracking-widest">
                   🇧🇷 Apostar no Brasil
                 </p>
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-bold text-white">{brazilLabel}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      Odd <span className="text-white font-mono font-bold">{brazilOdds.toFixed(2)}</span>
-                      {probs && (
-                        <span className="ml-2 text-gray-500">
-                          · modelo: {((brazilIsHome ? probs.homeWin : probs.awayWin) * 100).toFixed(1)}%
-                        </span>
-                      )}
-                    </p>
-                  </div>
+
+                {/* Seletor de mercado */}
+                <div className="flex flex-wrap gap-1.5">
+                  {available.map((m) => (
+                    <button
+                      key={m.key}
+                      onClick={() => {
+                        setBrazilMarketKey(m.key);
+                        // Pré-preenche a odd do mercado escolhido se a odd ainda não foi editada
+                        setBetForms((p) => ({
+                          ...p,
+                          [m.key]: p[m.key] ?? {
+                            amount: Math.max(1, bankroll * 0.05).toFixed(2),
+                            odds: m.odds.toFixed(2),
+                          },
+                        }));
+                      }}
+                      className={`text-[11px] px-2 py-1 rounded-full font-semibold transition-colors ${
+                        m.key === activeKey
+                          ? "bg-yellow-600 text-white"
+                          : "bg-white/10 text-gray-300 hover:bg-white/20"
+                      }`}
+                    >
+                      {m.label}
+                      <span className="ml-1 font-mono opacity-80">{m.odds.toFixed(2)}</span>
+                    </button>
+                  ))}
                 </div>
 
+                {/* Formulário do mercado selecionado */}
                 <div className="bg-black/30 border border-white/10 rounded-lg px-3 py-2.5 space-y-2">
                   <div className="flex gap-3">
                     <div className="flex-1">
@@ -1081,16 +1121,16 @@ export default function MatchCard({ fixture, bankroll, onBankrollChange }: Props
                       <input
                         type="number" step="0.01" min="0.01"
                         value={form.amount}
-                        onChange={(e) => setBetForms((p) => ({ ...p, [formKey]: { ...form, amount: e.target.value } }))}
+                        onChange={(e) => setBetForms((p) => ({ ...p, [activeKey]: { ...form, amount: e.target.value } }))}
                         className="w-full bg-gray-800 border border-white/10 rounded px-2 py-1.5 text-sm font-mono text-yellow-400 font-bold focus:outline-none focus:border-yellow-500"
                       />
                     </div>
                     <div className="flex-1">
-                      <label className="text-[10px] text-gray-600 block mb-0.5">Odd</label>
+                      <label className="text-[10px] text-gray-600 block mb-0.5">Odd real</label>
                       <input
                         type="number" step="0.01" min="1.01"
                         value={form.odds}
-                        onChange={(e) => setBetForms((p) => ({ ...p, [formKey]: { ...form, odds: e.target.value } }))}
+                        onChange={(e) => setBetForms((p) => ({ ...p, [activeKey]: { ...form, odds: e.target.value } }))}
                         className="w-full bg-gray-800 border border-white/10 rounded px-2 py-1.5 text-sm font-mono text-white font-bold focus:outline-none focus:border-yellow-500"
                       />
                     </div>
@@ -1110,8 +1150,8 @@ export default function MatchCard({ fixture, bankroll, onBankrollChange }: Props
                   onClick={() => {
                     if (customAmount <= 0 || customOdds <= 1 || customAmount > bankroll) return;
                     placeBet(
-                      { market: "1X2", label: brazilLabel, edge: 0, odds: brazilOdds,
-                        ourProb: 0, impliedProb: 1/brazilOdds, fairImpliedProb: 1/brazilOdds,
+                      { market: activeMkt.market, label: activeMkt.label, edge: 0, odds: activeMkt.odds,
+                        ourProb: 0, impliedProb: 1 / activeMkt.odds, fairImpliedProb: 1 / activeMkt.odds,
                         overround: 1, kelly: { hasValue: false, fraction: 0, halfFraction: 0, betAmount: 0, halfBetAmount: 0, edge: 0 },
                         dataQuality: "good", divergenceRatio: 1, warnings: [] },
                       customAmount,
@@ -1120,7 +1160,7 @@ export default function MatchCard({ fixture, bankroll, onBankrollChange }: Props
                   }}
                   disabled={customAmount <= 0 || customOdds <= 1 || customAmount > bankroll}
                   className="w-full text-sm px-3 py-2 rounded-lg font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-yellow-700 hover:bg-yellow-600 text-white">
-                  🇧🇷 Registrar aposta no Brasil · R$ {customAmount > 0 ? customAmount.toFixed(2) : "0.00"} @ {customOdds > 1 ? customOdds.toFixed(2) : brazilOdds.toFixed(2)}
+                  🇧🇷 Registrar · {activeMkt.label} · R$ {customAmount > 0 ? customAmount.toFixed(2) : "0.00"} @ {customOdds > 1 ? customOdds.toFixed(2) : activeMkt.odds.toFixed(2)}
                 </button>
               </div>
             );

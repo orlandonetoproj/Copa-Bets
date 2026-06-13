@@ -30,6 +30,9 @@ export interface BookmakerOdds {
   under25?: number;
   bttsYes?: number;
   bttsNo?: number;
+  cornersOver?: number;
+  cornersUnder?: number;
+  cornersLine?: number;
   overround?: number;  // sum of implied probs, e.g. 1.06 = 6% margin
   isSharp?: boolean;   // Pinnacle, Betfair Exchange, LowVig
 }
@@ -43,6 +46,11 @@ export interface FixtureOdds {
   under25?: number;
   bttsYes?: number;
   bttsNo?: number;
+  cornersOver?: number;
+  cornersUnder?: number;
+  cornersLine?: number;
+  dcHome?: number;  // Double Chance: home ou empate (calculado, devig)
+  dcAway?: number;  // Double Chance: away ou empate (calculado, devig)
   bookmaker?: string;
   allBookmakers?: BookmakerOdds[];
   updatedAt: string;
