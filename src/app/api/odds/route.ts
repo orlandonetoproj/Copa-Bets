@@ -7,7 +7,7 @@ export async function GET() {
   }
 
   // Sport já está no path; regions=eu,us garante mais cobertura de bookmakers
-  const url = `https://api.the-odds-api.com/v4/sports/soccer_fifa_world_cup/odds/?apiKey=${apiKey}&regions=eu,us,uk,us2&markets=h2h,totals,btts&oddsFormat=decimal`;
+  const url = `https://api.the-odds-api.com/v4/sports/soccer_fifa_world_cup/odds/?apiKey=${apiKey}&regions=eu,us,uk,us2&markets=h2h,totals&oddsFormat=decimal`;
 
   try {
     // cache: no-store — o cliente controla o cache via localStorage (30 min)
